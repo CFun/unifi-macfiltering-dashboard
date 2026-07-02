@@ -38,13 +38,19 @@ class UniFiClient:
     def _session(self) -> Session:
         session = requests.Session()
         session.verify = self.verify_ssl
-        login_url = f"{self.base_url}/api/login"
+
+        login_url = f"{self.base_url}/api/auth/login"
+
         response = session.post(
             login_url,
             json={"username": self.username, "password": self.password},
             timeout=self.timeout,
         )
         self._raise_for_unifi(response, "login")
+
+        csrf = response.headers.get("X-Csrf-Token")
+        if csrf:
+            session.headers["X-Csrf-Token"] = csrf
         return session
 
     def _raise_for_unifi(self, response: requests.Response, action: str) -> None:
@@ -63,16 +69,19 @@ class UniFiClient:
     def _url(self, path: str) -> str:
         return f"{self.base_url}/api/s/{self.site}{path}"
 
+    def _url2(self, path: str) -> str:
+        return f"{self.base_url}/proxy/network/api/s/{self.site}{path}"
+
     def list_wlans(self) -> list[dict[str, Any]]:
         with self._session() as session:
-            response = session.get(self._url("/rest/wlanconf"), timeout=self.timeout)
-            self._raise_for_unifi(response, "list WiFi networks")
+            response = session.get(self._url2("/rest/wlanconf"), timeout=self.timeout)
+            self._raise_for_unifi(response, "list WiFi networks2")
             data = response.json().get("data", [])
             return data if isinstance(data, list) else []
 
     def get_wlan(self, wlan_id: str) -> dict[str, Any]:
         with self._session() as session:
-            response = session.get(self._url(f"/rest/wlanconf/{wlan_id}"), timeout=self.timeout)
+            response = session.get(self._url2(f"/rest/wlanconf/{wlan_id}"), timeout=self.timeout)
             self._raise_for_unifi(response, "get WiFi network")
             data = response.json().get("data", [])
             if not data:
@@ -82,7 +91,7 @@ class UniFiClient:
     def update_wlan(self, wlan_id: str, wlan_object: dict[str, Any]) -> dict[str, Any]:
         body = copy.deepcopy(wlan_object)
         with self._session() as session:
-            response = session.put(self._url(f"/rest/wlanconf/{wlan_id}"), json=body, timeout=self.timeout)
+            response = session.put(self._url2(f"/rest/wlanconf/{wlan_id}"), json=body, timeout=self.timeout)
             self._raise_for_unifi(response, "update WiFi network")
             data = response.json().get("data", [])
             if not data:
