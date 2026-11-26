@@ -225,6 +225,11 @@ def create_app() -> Flask:
     app.config["DATA_DIR"] = data_dir
     app.config["DATABASE"] = str(data_dir / "dashboard.sqlite3")
 
+    app.extensions["unifi_client"] = UniFiClient()
+
+    def get_unifi_client():
+        return current_app.extensions["unifi_client"]
+
     with app.app_context():
         init_db()
         bootstrap_env_user()
@@ -319,7 +324,7 @@ def create_app() -> Flask:
         q = request.args.get("q", "").strip().lower()
         status = request.args.get("status", "").strip().lower()
         try:
-            wlans = UniFiClient().list_wlans()
+            wlans = get_unifi_client().list_wlans()
             rows = [wlan_summary(wlan) for wlan in wlans]
             if q:
                 rows = [row for row in rows if q in row["name"].lower() or q in row["id"].lower()]
@@ -336,7 +341,7 @@ def create_app() -> Flask:
     @app.route("/ssid/<ssid_id>")
     def ssid_detail(ssid_id: str) -> str | Response:
         try:
-            wlan = UniFiClient().get_wlan(ssid_id)
+            wlan = get_unifi_client().get_wlan(ssid_id)
         except UniFiError as exc:
             flash(str(exc), "error")
             return redirect(url_for("dashboard"))
@@ -351,7 +356,7 @@ def create_app() -> Flask:
         label = clean_label(request.form.get("label", ""))
         try:
             mac = normalize_mac(raw_mac)
-            client = UniFiClient()
+            client = get_unifi_client()
             wlan = client.get_wlan(ssid_id)
             ensure_editable_allow_mode(wlan)
             current = wlan_mac_list(wlan)
@@ -381,7 +386,7 @@ def create_app() -> Flask:
         raw_mac = request.form.get("mac", "")
         try:
             mac = normalize_mac(raw_mac)
-            client = UniFiClient()
+            client = get_unifi_client()
             wlan = client.get_wlan(ssid_id)
             ensure_editable_allow_mode(wlan)
             current = wlan_mac_list(wlan)
@@ -409,7 +414,7 @@ def create_app() -> Flask:
         try:
             mac = normalize_mac(request.form.get("mac", ""))
             label = clean_label(request.form.get("label", ""))
-            wlan = UniFiClient().get_wlan(ssid_id)
+            wlan = get_unifi_client().get_wlan(ssid_id)
             if label:
                 upsert_mac_label(mac, label, user)
                 audit(user, source_ip, "label_update", wlan, mac, label, "Updated local MAC name", True)
@@ -425,7 +430,7 @@ def create_app() -> Flask:
     def bulk_preview(ssid_id: str) -> str | Response:
         verify_csrf()
         try:
-            wlan = UniFiClient().get_wlan(ssid_id)
+            wlan = get_unifi_client().get_wlan(ssid_id)
             text = request.form.get("bulk_text", "")
             uploaded = request.files.get("bulk_file")
             if uploaded and uploaded.filename:
@@ -470,7 +475,7 @@ def create_app() -> Flask:
         try:
             preview = json.loads(request.form.get("preview_json", "[]"))
             enable_if_disabled = request.form.get("enable_if_disabled") == "1"
-            client = UniFiClient()
+            client = get_unifi_client()
             wlan = client.get_wlan(ssid_id)
             currently_enabled = bool(wlan.get("mac_filter_enabled"))
             policy = str(wlan.get("mac_filter_policy", "allow")).lower()
@@ -566,7 +571,7 @@ def create_app() -> Flask:
         user = session["user"]
         source_ip = client_ip()
         try:
-            client = UniFiClient()
+            client = get_unifi_client()
             wlan = client.get_wlan(ssid_id)
             path = backup_wlan(wlan, "manual", created_by=user, source_ip=source_ip)
             audit(user, source_ip, "manual_backup", wlan, "", "", f"Created backup {path.name}", True)
@@ -604,7 +609,7 @@ def create_app() -> Flask:
             ssid_id = str(backup.get("_id", ""))
             if not ssid_id:
                 raise ValueError("Backup file does not contain a WiFi network ID.")
-            client = UniFiClient()
+            client = get_unifi_client()
             current_wlan = client.get_wlan(ssid_id)
             backup_wlan(current_wlan, "before-restore", created_by=user, source_ip=source_ip)
             updated = client.update_wlan(ssid_id, backup)

@@ -29,6 +29,10 @@ class UniFiClient:
         self.verify_ssl = env_bool("UNIFI_VERIFY_SSL", False)
         self.timeout = 20
 
+        self.session = requests.Session()
+        self.session.verify = self.verify_ssl
+        self.authenticated = False
+
         if not self.verify_ssl:
             requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
@@ -36,12 +40,12 @@ class UniFiClient:
             raise UniFiError("UNIFI_USERNAME and UNIFI_PASSWORD must be set")
 
     def _session(self) -> Session:
-        session = requests.Session()
-        session.verify = self.verify_ssl
+        if self.authenticated:
+            return self.session
 
         login_url = f"{self.base_url}/api/auth/login"
 
-        response = session.post(
+        response = self.session.post(
             login_url,
             json={"username": self.username, "password": self.password},
             timeout=self.timeout,
@@ -50,8 +54,10 @@ class UniFiClient:
 
         csrf = response.headers.get("X-Csrf-Token")
         if csrf:
-            session.headers["X-Csrf-Token"] = csrf
-        return session
+            self.session.headers["X-Csrf-Token"] = csrf
+
+        self.authenticated = True
+        return self.session
 
     def _raise_for_unifi(self, response: requests.Response, action: str) -> None:
         try:
